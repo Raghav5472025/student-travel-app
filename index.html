@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Student Travel Wizard — Carbon Tracker</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+ integrity="sha256-sA+q3kY5rWd6t0t9z3h3h1kzQH1f4v0YbYk2Kp4oU6k=" crossorigin=""/>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --accent:#2b8a3e;
+    --muted:#6b7280;
+    --card:#ffffff;
+    --bg:#f3f6f8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background:var(--bg);
+    color:#111827;
+  }
+  header{
+    background:linear-gradient(90deg,var(--accent), #1f7a36);
+    color:white;
+    padding:18px 16px;
+    text-align:center;
+    box-shadow:0 3px 8px rgba(0,0,0,0.08);
+  }
+  header h1{margin:0;font-size:20px}
+  main{max-width:1000px;margin:20px auto;padding:12px}
+  .wizard{
+    display:grid;
+    grid-template-columns: 1fr 320px;
+    gap:16px;
+  }
+  .card{
+    background:var(--card);
+    border-radius:12px;
+    padding:16px;
+    box-shadow:0 6px 18px rgba(13,26,38,0.06);
+    min-height:320px;
+    overflow:auto;
+  }
+
+  /* steps container */
+  .steps{
+    position:relative;
+    min-height:600px;
+  }
+  .step{
+    display:none;
+    opacity:0;
+    transform:translateY(10px);
+    transition:all .28s ease;
+  }
+  .step.active{
+    display:block;
+    opacity:1;
+    transform:translateY(0);
+  }
+
+  /* right column summary */
+  .side{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+
+  label{display:block;margin:8px 0 6px;font-weight:600;color:var(--muted)}
+  input[type=text], input[type=email], input[type=number], select, textarea{
+    width:100%;
+    padding:10px 12px;
+    border-radius:8px;
+    border:1px solid #e5e7eb;
+    background:white;
+    font-size:14px;
+  }
+  .row{display:flex;gap:10px}
+  .row .col{flex:1}
+  button{
+    background:var(--accent);
+    color:white;
+    border:none;
+    padding:10px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .btn-ghost{
+    background:transparent;color:var(--muted);border:1px solid #e5e7eb;
+  }
+  .actions{display:flex;gap:10px;margin-top:12px}
+
+  /* map holder */
+  #map {height:360px;border-radius:10px;border:1px solid #e6eef0}
+
+  /* travel history list */
+  .history-list{max-height:200px;overflow:auto;padding:8px;border-radius:8px;border:1px dashed #eaeef0}
+  .history-item{padding:8px;border-bottom:1px solid #f0f3f4;font-size:14px}
+  .badge{display:inline-block;padding:6px 8px;border-radius:999px;background:#e6f4ea;color:#0b6b2e;font-weight:700;margin-left:8px;font-size:12px}
+
+  /* leaderboard */
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th, td{padding:8px;border-bottom:1px solid #f2f4f5;text-align:left;font-size:13px}
+  th{color:var(--muted);font-weight:700}
+
+  .small{font-size:13px;color:var(--muted)}
+  .center{text-align:center}
+
+  @media (max-width:980px){
+    .wizard{grid-template-columns:1fr}
+    .side{order:2}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Student Travel Wizard — Carbon Footprint Tracker</h1>
+  <div class="small">Step-by-step travel logging with interactive map — feel like a real web app 🎯</div>
+</header>
+
+<main>
+  <div class="wizard">
+    <div class="card steps">
+      <!-- STEP 1: PROFILE -->
+      <div id="step-1" class="step active">
+        <h2>Step 1 — Student Profile</h2>
+        <p class="small">Create or choose a profile (saved in your browser).</p>
+        <div style="display:flex;gap:12px;align-items:center">
+          <div style="flex:1">
+            <label for="studentName">Full name</label>
+            <input id="studentName" type="text" placeholder="e.g. Ritu Sharma" />
+
+            <label for="roll">Roll / ID</label>
+            <input id="roll" type="text" placeholder="e.g. 21BCS045" />
+
+            <label for="course">Course</label>
+            <input id="course" type="text" placeholder="e.g. B.Tech Computer Science" />
+
+            <label for="email">Email</label>
+            <input id="email" type="email" placeholder="student@mail.edu" />
+          </div>
+          <div style="width:160px;text-align:center">
+            <div id="photoPreview" style="width:140px;height:140px;border-radius:12px;background:#f4f6f7;display:flex;align-items:center;justify-content:center;overflow:hidden">
+              <span class="small">Photo</span>
+            </div>
+            <input id="photoInput" type="file" accept="image/*" style="margin-top:10px" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="saveProfileBtn">Save Profile</button>
+          <button class="btn-ghost" id="loadProfileBtn">Load Profiles</button>
+          <button class="btn-ghost" id="newProfileBtn">New Profile</button>
+          <div style="margin-left:auto" class="small" id="profileSavedText"></div>
+        </div>
+      </div>
+
+      <!-- STEP 2: TRAVEL FORM -->
+      <div id="step-2" class="step">
+        <h2>Step 2 — Add Travel</h2>
+        <p class="small">Quick add: purpose, mode, and either input distance or mark points on the map in next step.</p>
+
+        <label for="purpose">Purpose</label>
+        <input id="purpose" type="text" placeholder="e.g. College, Library, Internship" />
+
+        <label for="mode">Mode of Travel</label>
+        <select id="mode">
+          <option>Bus</option>
+          <option>Walk</option>
+          <option>Cycle</option>
+          <option>Car</option>
+          <option>Train</option>
+        </select>
+
+        <div class="row" style="margin-top:8px">
+          <div class="col">
+            <label for="distanceManual">Distance (km) — optional</label>
+            <input id="distanceManual" type="number" min="0" step="0.01" placeholder="e.g. 4.3" />
+          </div>
+          <div class="col">
+            <label>&nbsp;</label>
+            <button id="openMapBtn" class="btn-ghost">Open Map to Mark Start/End</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="addTripBtn">Add Trip</button>
+          <button class="btn-ghost" id="prevToProfile">Previous</button>
+          <div style="margin-left:auto" id="tripAddedMessage" class="small"></div>
+        </div>
+      </div>
+
+      <!-- STEP 3: MAP -->
+      <div id="step-3" class="step">
+        <h2>Step 3 — Interactive Map</h2>
+        <p class="small">Click the map to set <strong>Start</strong> and <strong>End</strong> points. Use the toggles below.</p>
+        <div id="map"></div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <label class="small">Choose Marker Mode:</label>
+          <select id="markerMode" style="width:160px">
+            <option value="start">Set Start</option>
+            <option value="end">Set End</option>
+            <option value="none">None</option>
+          </select>
+
+          <button id="clearMarkers" class="btn-ghost">Clear Markers</button>
+          <div style="margin-left:auto" class="small">Distance: <span id="mapDistance">0.00</span> km</div>
+        </div>
+
+        <div class="actions">
+          <button id="useMapDistanceBtn">Use Map Distance → Add Trip</button>
+          <button class="btn-ghost" id="prevToForm">Previous</button>
+        </div>
+      </div>
+
+      <!-- STEP 4: SUMMARY -->
+      <div id="step-4" class="step">
+        <h2>Step 4 — Summary & Carbon</h2>
+        <p class="small">Review last trips, total travel and estimated CO₂ emissions.</p>
+
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="flex:1">
+            <h3>Recent trips</h3>
+            <div id="recentTrips" class="history-list"></div>
+          </div>
+          <div style="width:260px">
+            <h3>Your Stats</h3>
+            <p id="statsSummary" class="small">No trips yet</p>
+            <div style="margin-top:12px">
+              <strong>Total Distance:</strong> <span id="totalDistance">0</span> km<br>
+              <strong>Total CO₂:</strong> <span id="totalCO2">0</span> kg
+            </div>
+            <div style="margin-top:12px"><strong>Badge:</strong> <span id="badge" class="badge">None</span></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="nextToBoard">Next → Leaderboard</button>
+          <button class="btn-ghost" id="prevToMap">Previous</button>
+          <button id="exportCSV" class="btn-ghost">Export CSV</button>
+          <button id="exportPDF" class="btn-ghost">Export PDF</button>
+        </div>
+      </div>
+
+      <!-- STEP 5: LEADERBOARD -->
+      <div id="step-5" class="step">
+        <h2>Step 5 — Leaderboard & Profiles</h2>
+        <p class="small">Top students by distance (based on local-storage data on this browser).</p>
+
+        <div style="display:flex;gap:12px">
+          <div style="flex:1">
+            <h3>Leaderboard</h3>
+            <table>
+              <thead><tr><th>Rank</th><th>Name</th><th>Total km</th></tr></thead>
+              <tbody id="leaderboardBody"></tbody>
+            </table>
+          </div>
+          <div style="width:260px">
+            <h3>All Profiles</h3>
+            <div id="profilesList" class="history-list"></div>
+            <div style="margin-top:10px">
+              <button id="deleteAll" class="btn-ghost">Delete All Data</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:12px">
+          <button id="finishBtn">Finish / Reset View</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <aside class="side">
+      <div class="card">
+        <h3>Quick Info</h3>
+        <p class="small">Current profile:</p>
+        <div id="quickProfile" style="display:flex;gap:10px;align-items:center">
+          <div id="miniPic" style="width:56px;height:56px;border-radius:8px;background:#f4f6f7"></div>
+          <div>
+            <div id="miniName" style="font-weight:700">No profile</div>
+            <div id="miniCourse" class="small">—</div>
+          </div>
+        </div>
+
+        <hr style="margin:12px 0">
+
+        <h4 class="small">Recent activity</h4>
+        <div id="miniRecent" class="small">No trips yet</div>
+      </div>
+
+      <div class="card">
+        <h3>Controls</h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button id="toStep1" class="btn-ghost">Go to Profile</button>
+          <button id="toStep2" class="btn-ghost">Add Travel</button>
+          <button id="toStep3" class="btn-ghost">Open Map</button>
+          <button id="toStep4" class="btn-ghost">Summary</button>
+          <button id="toStep5" class="btn-ghost">Leaderboard</button>
+        </div>
+      </div>
+
+    </aside>
+  </div> <!-- wizard -->
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+ integrity="sha256-o9N1j7kC4g0l2Cwq0G5wWnI7Y4Y3Q1l3kYtk0t0G8kM=" crossorigin=""></script>
+
+<script>
+/* ========== Storage Keys ========== */
+const KEY_PROFILES = "st_profiles_v1"; // array of {id,name,roll,course,email,picData,totalDistance}
+const KEY_TRIPS = "st_trips_v1"; // array of {studentId,date,purpose,mode,distance,fromLatLng,toLatLng}
+
+/* ========== App State ========== */
+let profiles = JSON.parse(localStorage.getItem(KEY_PROFILES) || "[]");
+let trips = JSON.parse(localStorage.getItem(KEY_TRIPS) || "[]");
+let currentProfileId = null;
+
+/* ========== Helpers ========== */
+function uid(){ return 'id'+Math.random().toString(36).slice(2,9); }
+function saveAll(){ localStorage.setItem(KEY_PROFILES, JSON.stringify(profiles)); localStorage.setItem(KEY_TRIPS, JSON.stringify(trips)); }
+function fmt(n, d=2){ return Number(n||0).toFixed(d); }
+
+function haversine(lat1,lng1,lat2,lng2){
+  const R = 6371; // km
+  const toRad = v => v * Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(toRad(lat1))*Math.cos(toRad(lat2)) * Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+/* ========== UI step management ========== */
+const steps = ["step-1","step-2","step-3","step-4","step-5"];
+function showStep(id){
+  steps.forEach(s => document.getElementById(s).classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+document.getElementById("toStep1").onclick = ()=>showStep("step-1");
+document.getElementById("toStep2").onclick = ()=>showStep("step-2");
+document.getElementById("toStep3").onclick = ()=>showStep("step-3");
+document.getElementById("toStep4").onclick = ()=>showStep("step-4");
+document.getElementById("toStep5").onclick = ()=>showStep("step-5");
+
+/* ========== Profile Handling ========== */
+const photoInput = document.getElementById("photoInput");
+const photoPreview = document.getElementById("photoPreview");
+photoInput.addEventListener("change", e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=> { photoPreview.innerHTML = `<img src="${r.result}" style="width:100%;height:100%;object-fit:cover">`; };
+  r.readAsDataURL(f);
+});
+
+document.getElementById("saveProfileBtn").addEventListener("click", ()=>{
+  const name = document.getElementById("studentName").value.trim();
+  const roll = document.getElementById("roll").value.trim();
+  const course = document.getElementById("course").value.trim();
+  const email = document.getElementById("email").value.trim();
+  // image from preview (if any)
+  const imgTag = photoPreview.querySelector("img");
+  const picData = imgTag ? imgTag.src : "";
+
+  if(!name || !roll){ alert("Please enter at least name & roll."); return; }
+
+  // If profile for same roll exists — update, else create
+  let existing = profiles.find(p=>p.roll === roll);
+  if(existing){
+    existing.name = name; existing.course = course; existing.email = email; if(picData) existing.pic = picData;
+    currentProfileId = existing.id;
+  } else {
+    const id = uid();
+    profiles.push({id, name, roll, course, email, pic:picData, totalDistance:0});
+    currentProfileId = id;
+  }
+  saveAll();
+  document.getElementById("profileSavedText").innerText = "Saved ✓";
+  setTimeout(()=>document.getElementById("profileSavedText").innerText = "", 1600);
+  refreshQuickProfile();
+  refreshProfilesList();
+  refreshLeaderboard();
+});
+
+/* Load profiles list to choose existing */
+document.getElementById("loadProfileBtn").addEventListener("click", ()=>{
+  const list = profiles.map(p=>`${p.name} — ${p.roll}`).join("\n");
+  if(!list){ alert("No saved profiles yet."); return; }
+  const sel = prompt("Type roll number to load profile:\n\n" + list);
+  if(!sel) return;
+  const found = profiles.find(p=>p.roll===sel.trim() || p.name===sel.trim());
+  if(!found){ alert("Profile not found."); return; }
+  currentProfileId = found.id;
+  // fill fields
+  document.getElementById("studentName").value = found.name;
+  document.getElementById("roll").value = found.roll;
+  document.getElementById("course").value = found.course;
+  document.getElementById("email").value = found.email;
+  if(found.pic) photoPreview.innerHTML = `<img src="${found.pic}" style="width:100%;height:100%;object-fit:cover">`;
+  refreshQuickProfile();
+  alert("Profile loaded: " + found.name);
+});
+
+/* New profile */
+document.getElementById("newProfileBtn").addEventListener("click", ()=>{
+  currentProfileId = null;
+  document.getElementById("studentName").value = "";
+  document.getElementById("roll").value = "";
+  document.getElementById("course").value = "";
+  document.getElementById("email").value = "";
+  photoPreview.innerHTML = "<span class='small'>Photo</span>";
+  refreshQuickProfile();
+});
+
+/* Right sidebar quick profile */
+function refreshQuickProfile(){
+  const miniPic = document.getElementById("miniPic");
+  const miniName = document.getElementById("miniName");
+  const miniCourse = document.getElementById("miniCourse");
+  if(!currentProfileId){
+    miniPic.innerHTML = ""; miniPic.style.background="#f4f6f7";
+    miniName.innerText = "No profile"; miniCourse.innerText = "—";
+    return;
+  }
+  const p = profiles.find(x=>x.id===currentProfileId);
+  if(!p) return;
+  if(p.pic) miniPic.innerHTML = `<img src="${p.pic}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`; else miniPic.innerHTML = "";
+  miniName.innerText = p.name;
+  miniCourse.innerText = p.course || p.roll;
+}
+
+/* Show profiles in sidebar */
+function refreshProfilesList(){
+  const el = document.getElementById("profilesList");
+  el.innerHTML = "";
+  if(profiles.length===0){ el.innerHTML = "<div class='small'>No profiles</div>"; return; }
+  profiles.forEach(p=>{
+    const div = document.createElement("div");
+    div.className = "history-item";
+    div.innerHTML = `<strong>${p.name}</strong><div class="small">${p.roll} • ${p.course||''}</div>
+      <div style="margin-top:6px">
+        <button class="btn-ghost" onclick='loadProfileById("${p.id}")'>Load</button>
+        <button class="btn-ghost" onclick='deleteProfile("${p.id}")'>Delete</button>
+      </div>`;
+    el.appendChild(div);
+  });
+}
+window.loadProfileById = function(id){
+  const p = profiles.find(x=>x.id===id);
+  if(!p) return;
+  currentProfileId = p.id;
+  document.getElementById("studentName").value = p.name;
+  document.getElementById("roll").value = p.roll;
+  document.getElementById("course").value = p.course;
+  document.getElementById("email").value = p.email;
+  if(p.pic) photoPreview.innerHTML = `<img src="${p.pic}" style="width:100%;height:100%;object-fit:cover">`;
+  refreshQuickProfile();
+  alert("Loaded: " + p.name);
+}
+window.deleteProfile = function(id){
+  if(!confirm("Delete profile and its trips?")) return;
+  const p = profiles.find(x=>x.id===id);
+  profiles = profiles.filter(x=>x.id!==id);
+  // delete trips for that profile
+  trips = trips.filter(t=>t.studentId!==id);
+  if(currentProfileId===id) currentProfileId = null;
+  saveAll(); refreshProfilesList(); refreshRecentTrips(); refreshLeaderboard(); refreshQuickProfile();
+}
+
+/* ========== Trip Handling ========== */
+document.getElementById("addTripBtn").addEventListener("click", ()=>{
+  if(!currentProfileId){ alert("Please save or load a profile first."); showStep("step-1"); return; }
+  const purpose = document.getElementById("purpose").value || "General";
+  const mode = document.getElementById("mode").value || "Bus";
+  let distance = parseFloat(document.getElementById("distanceManual").value || 0);
+  if(distance<=0){
+    alert("Distance is empty or zero. Either enter a distance or mark points on the map.");
+    return;
+  }
+  addTripRecord(currentProfileId, purpose, mode, distance, null, null);
+  document.getElementById("tripAddedMessage").innerText = "Trip added ✓";
+  setTimeout(()=>document.getElementById("tripAddedMessage").innerText = "",1400);
+});
+
+function addTripRecord(studentId, purpose, mode, distance, fromLatLng, toLatLng){
+  const trip = {
+    id: uid(),
+    studentId,
+    date: new Date().toLocaleString(),
+    purpose, mode, distance: Number(distance),
+    from: fromLatLng || null, to: toLatLng || null
+  };
+  trips.push(trip);
+  // update student's total
+  const p = profiles.find(x=>x.id===studentId);
+  if(p){ p.totalDistance = (Number(p.totalDistance||0) + Number(distance)); }
+  saveAll();
+  refreshRecentTrips();
+  refreshStatsForProfile(studentId);
+  refreshLeaderboard();
+}
+
+/* ========== Map Integration (Leaflet) ========== */
+let map = L.map('map', { center:[28.6139,77.2090], zoom:12, zoomControl:true });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+let startMarker = null, endMarker = null, startLatLng=null, endLatLng=null;
+const markerMode = document.getElementById("markerMode");
+map.on('click', function(e){
+  const mode = markerMode.value;
+  if(mode === "start"){
+    if(startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(e.latlng, {title:"Start"}).addTo(map).bindPopup("Start").openPopup();
+    startLatLng = e.latlng;
+  } else if(mode === "end"){
+    if(endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(e.latlng, {title:"End"}).addTo(map).bindPopup("End").openPopup();
+    endLatLng = e.latlng;
+  }
+  updateMapDistanceUI();
+});
+
+document.getElementById("clearMarkers").addEventListener("click", ()=>{
+  if(startMarker) map.removeLayer(startMarker); startMarker=null; startLatLng=null;
+  if(endMarker) map.removeLayer(endMarker); endMarker=null; endLatLng=null;
+  updateMapDistanceUI();
+});
+
+function updateMapDistanceUI(){
+  let dist = 0;
+  if(startLatLng && endLatLng){
+    dist = haversine(startLatLng.lat, startLatLng.lng, endLatLng.lat, endLatLng.lng);
+  }
+  document.getElementById("mapDistance").innerText = fmt(dist,2);
+}
+
+/* Use map distance to add trip */
+document.getElementById("useMapDistanceBtn").addEventListener("click", ()=>{
+  if(!currentProfileId){ alert("Save profile first."); showStep("step-1"); return; }
+  if(!startLatLng || !endLatLng){ alert("Please set both start and end markers on the map."); return; }
+  const distance = haversine(startLatLng.lat, startLatLng.lng, endLatLng.lat, endLatLng.lng);
+  const purpose = document.getElementById("purpose").value || "Map Trip";
+  const mode = document.getElementById("mode").value || "Bus";
+  addTripRecord(currentProfileId, purpose, mode, Number(distance), startLatLng, endLatLng);
+  document.getElementById("tripAddedMessage").innerText = "Trip added from map ✓";
+  setTimeout(()=>document.getElementById("tripAddedMessage").innerText = "",1400);
+});
+
+/* open map button */
+document.getElementById("openMapBtn").addEventListener("click", ()=> showStep("step-3"));
+document.getElementById("prevToForm").addEventListener("click", ()=> showStep("step-2"));
+document.getElementById("prevToProfile").addEventListener("click", ()=> showStep("step-1"));
+document.getElementById("prevToMap").addEventListener("click", ()=> showStep("step-3"));
+document.getElementById("prevToProfile").addEventListener("click", ()=> showStep("step-1"));
+
+/* ========== Summary & Stats ========== */
+function refreshRecentTrips(){
+  const el = document.getElementById("recentTrips");
+  el.innerHTML = "";
+  if(!currentProfileId){ el.innerHTML="<div class='small'>No profile selected</div>"; return; }
+  const myTrips = trips.filter(t=>t.studentId===currentProfileId).slice().reverse();
+  if(myTrips.length===0){ el.innerHTML="<div class='small'>No trips yet</div>"; return; }
+  myTrips.forEach(t=>{
+    const div = document.createElement("div");
+    div.className = "history-item";
+    div.innerHTML = `<strong>${t.purpose}</strong> <div class="small">${t.date} • ${t.mode}</div>
+      <div style="margin-top:6px">${fmt(t.distance,2)} km • ${fmt(t.distance*0.089,2)} kg CO₂</div>`;
+    el.appendChild(div);
+  });
+}
+
+function refreshStatsForProfile(id){
+  const myTrips = trips.filter(t=>t.studentId===id);
+  const totalDistance = myTrips.reduce((s,x)=>s + Number(x.distance), 0);
+  const totalCO2 = totalDistance * 0.089; // kg
+  document.getElementById("totalDistance").innerText = fmt(totalDistance,2);
+  document.getElementById("totalCO2").innerText = fmt(totalCO2,2);
+  // badge
+  const badgeEl = document.getElementById("badge");
+  let badge = "None";
+  if(totalDistance >= 200) badge="Eco Champion";
+  else if(totalDistance >= 50) badge = "Green Traveller";
+  else if(totalDistance > 0) badge = "Bus Beginner";
+  badgeEl.innerText = badge;
+  // mini recent
+  const recent = myTrips.slice(-1)[0];
+  document.getElementById("miniRecent").innerText = recent ? `${recent.purpose} • ${fmt(recent.distance,2)} km` : "No trips yet";
+}
+
+/* When user enters summary step */
+document.getElementById("nextToBoard").addEventListener("click", ()=>{
+  if(!currentProfileId){ alert("Please select or save a profile first."); showStep("step-1"); return; }
+  refreshRecentTrips();
+  refreshStatsForProfile(currentProfileId);
+  showStep("step-5");
+});
+
+/* ========== Leaderboard ========== */
+function refreshLeaderboard(){
+  // compute total distances per profile from trips (source of truth)
+  const totals = profiles.map(p=>{
+    const tks = trips.filter(t=>t.studentId===p.id);
+    const sum = tks.reduce((s,x)=>s + Number(x.distance), 0);
+    return {id:p.id, name:p.name, roll:p.roll, total:sum, pic:p.pic||""};
+  });
+  totals.sort((a,b)=>b.total - a.total);
+  const tbody = document.getElementById("leaderboardBody");
+  tbody.innerHTML = "";
+  totals.forEach((r,i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i+1}</td><td>${r.name} <div class="small">${r.roll}</div></td><td>${fmt(r.total,2)}</td>`;
+    tbody.appendChild(tr);
+  });
+  // quick list on right column
+  refreshProfilesList();
+}
+
+/* ========== Export CSV & PDF ========== */
+document.getElementById("exportCSV").addEventListener("click", ()=>{
+  if(!currentProfileId){ alert("Choose a profile to export its trips."); return; }
+  const myTrips = trips.filter(t=>t.studentId===currentProfileId);
+  let csv = "Date,Purpose,Mode,Distance(km),CO2(kg)\n";
+  myTrips.forEach(t => csv += `"${t.date}","${t.purpose}","${t.mode}",${fmt(t.distance,2)},${fmt(t.distance*0.089,2)}\n`);
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `trips_${currentProfileId}.csv`; a.click();
+});
+
+document.getElementById("exportPDF").addEventListener("click", ()=>{
+  if(!currentProfileId){ alert("Choose a profile to export."); return; }
+  const myTrips = trips.filter(t=>t.studentId===currentProfileId);
+  const p = profiles.find(x=>x.id===currentProfileId);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"pt", format:"a4"});
+  let y = 40;
+  doc.setFontSize(18);
+  doc.text(`${p.name} — Travel Report`, 40, y); y+=24;
+  doc.setFontSize(11);
+  doc.text(`Roll: ${p.roll}  •  Course: ${p.course || '-'}  •  Email: ${p.email || '-'}`, 40, y); y+=18;
+  doc.text(`Total trips: ${myTrips.length}`, 40, y); y+=20;
+  doc.setFontSize(12);
+  myTrips.forEach(t => {
+    if(y > 760){ doc.addPage(); y = 40; }
+    doc.text(`${t.date} — ${t.purpose} — ${t.mode} — ${fmt(t.distance,2)} km — ${fmt(t.distance*0.089,2)} kg CO₂`, 40, y);
+    y += 16;
+  });
+  doc.save(`report_${p.roll || p.name}.pdf`);
+});
+
+/* ========== Delete All Data ========== */
+document.getElementById("deleteAll").addEventListener("click", ()=>{
+  if(!confirm("Delete ALL saved profiles and trips from this browser?")) return;
+  localStorage.removeItem(KEY_PROFILES);
+  localStorage.removeItem(KEY_TRIPS);
+  profiles = []; trips = []; currentProfileId = null;
+  saveAll(); refreshProfilesList(); refreshLeaderboard(); refreshRecentTrips(); refreshQuickProfile();
+});
+
+/* finish */
+document.getElementById("finishBtn").addEventListener("click", ()=> showStep("step-1"));
+
+/* init UI on load */
+(function init(){
+  refreshProfilesList();
+  refreshLeaderboard();
+  refreshQuickProfile();
+  refreshRecentTrips();
+})();
+</script>
+</body>
+</html>
+
